@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>工業級三軸震動與 ISO 10816 診斷儀表板</title>
+    <!-- 引入 Chart.js 圖表庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root {
+        --bg-color: #0b0f19;
+        --card-bg: #151c2c;
+        --border-color: #2a3447;
+        --text-primary: #e2e8f0;
+        --text-secondary: #94a3b8;
+
+        /* ISO 狀態顏色 */
+        --zone-a: #10b981; /* 綠色 - 良好 */
+        --zone-b: #3b82f6; /* 藍色 - 滿意 */
+        --zone-c: #f59e0b; /* 黃色 - 警戒 */
+        --zone-d: #ef4444; /* 紅色 - 危險 */
+
+        /* 三軸顏色 */
+        --axis-x: #ef4444;
+        --axis-y: #10b981;
+        --axis-z: #3b82f6;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+
+      body {
+        background-color: var(--bg-color);
+        color: var(--text-primary);
+        padding: 20px;
+      }
+
+      .dashboard-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+
+      /* 標題區 */
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: var(--card-bg);
+        padding: 15px 25px;
+        border-radius: 10px;
+        border: 1px solid var(--border-color);
+      }
+
+      h1 {
+        font-size: 1.4rem;
+        font-weight: 600;
+      }
+
+      /* 馬達驅動控制按鈕區 */
+      .motor-control-container {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .control-btn-group {
+        display: flex;
+        gap: 8px;
+      }
+
+      .btn-zone {
+        padding: 6px 14px;
+        border-radius: 6px;
+        border: none;
+        font-weight: bold;
+        cursor: pointer;
+        color: #ffffff;
+        transition: all 0.2s ease;
+        font-size: 0.85rem;
+      }
+
+      .btn-zone-a { background-color: var(--zone-a); }
+      .btn-zone-b { background-color: var(--zone-b); }
+      .btn-zone-c { background-color: var(--zone-c); color: #000; }
+      .btn-zone-d { background-color: var(--zone-d); }
+
+      .btn-zone:hover:not(:disabled) {
+        opacity: 0.85;
+        transform: translateY(-1px);
+      }
+
+      /* 按鈕被禁用 (15秒內) 時的樣式 */
+      .btn-zone:disabled {
+        background-color: #334155 !important;
+        color: #64748b !important;
+        cursor: not-allowed;
+        opacity: 0.6;
+        transform: none;
+      }
+
+      .cooldown-text {
+        font-size: 0.85rem;
+        color: var(--zone-c);
+        font-weight: bold;
+        min-width: 85px;
+      }
+
+      /* 頂部區塊：ISO 判定與 RMS 卡片 */
+      .top-row {
+        display: grid;
+        grid-template-columns: 350px 1fr;
+        gap: 20px;
+      }
+
+      .card {
+        background-color: var(--card-bg);
+        border-radius: 10px;
+        padding: 20px;
+        border: 1px solid var(--border-color);
+      }
+
+      /* ISO Status Card */
+      .status-badge {
+        display: inline-block;
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 1.1rem;
+        margin-top: 10px;
+      }
+
+      .rms-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 15px;
+        margin-top: 15px;
+      }
+
+      .rms-item {
+        background-color: rgba(255, 255, 255, 0.03);
+        border-left: 4px solid var(--border-color);
+        padding: 12px;
+        border-radius: 4px;
+      }
+
+      .rms-item.x-axis { border-color: var(--axis-x); }
+      .rms-item.y-axis { border-color: var(--axis-y); }
+      .rms-item.z-axis { border-color: var(--axis-z); }
+      .rms-item.total { border-color: #a855f7; }
+
+      .rms-label {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+      }
+      .rms-val {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-top: 5px;
+      }
+
+      /* 中間區塊：FFT 頻譜圖 */
+      .fft-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+
+      .btn-group {
+        display: flex;
+        gap: 8px;
+      }
+      .btn {
+        background-color: var(--bg-color);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        padding: 6px 14px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 0.85rem;
+      }
+      .btn.active {
+        background-color: #2563eb;
+        color: white;
+        border-color: #2563eb;
+      }
+
+      .chart-container {
+        position: relative;
+        height: 320px;
+        width: 100%;
+      }
+
+      /* 下方區塊：診斷與建議 */
+      .diagnosis-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+
+      .diag-title {
+        font-size: 1rem;
+        color: var(--text-secondary);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .action-list {
+        list-style: none;
+        margin-top: 10px;
+      }
+
+      .action-list li {
+        position: relative;
+        padding-left: 20px;
+        margin-bottom: 8px;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+      }
+
+      .action-list li::before {
+        content: "➔";
+        position: absolute;
+        left: 0;
+        color: #3b82f6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dashboard-container">
+      <!-- Header -->
+      <header>
+        <h1>⚡ 工業級三軸震動與 ISO 10816 監測儀表板</h1>
+
+        <!-- 偏心馬達驅動按鈕區塊 -->
+        <div class="motor-control-container">
+          <span style="font-size: 0.9rem; color: var(--text-secondary);">偏心馬達驅動：</span>
+          <div class="control-btn-group">
+            <button class="btn-zone btn-zone-a" onclick="triggerMotor('A')">Zone A</button>
+            <button class="btn-zone btn-zone-b" onclick="triggerMotor('B')">Zone B</button>
+            <button class="btn-zone btn-zone-c" onclick="triggerMotor('C')">Zone C</button>
+            <button class="btn-zone btn-zone-d" onclick="triggerMotor('D')">Zone D</button>
+          </div>
+          <span id="cooldownTimer" class="cooldown-text"></span>
+        </div>
+      </header>
+
+      <!-- Top Row: ISO Status & RMS Cards -->
+      <div class="top-row">
+        <!-- ISO 評等判定卡片 -->
+        <div class="card">
+          <div class="rms-label">ISO 10816 綜合健康評等</div>
+          <div id="statusBadge" class="status-badge">ZONE B (滿意)</div>
+          <p
+            id="isoThresholdInfo"
+            style="
+              margin-top: 15px;
+              font-size: 0.9rem;
+              color: var(--text-secondary);
+            "
+          >
+            當前最大震動軸：<span id="max-vibration-axis">Y</span> 軸 (<span id="max-vibration">3.1</span> mm/s)
+          </p>
+        </div>
+
+        <!-- 三軸 RMS 數據卡片 -->
+        <div class="card">
+          <div class="rms-label">即時震動速度 RMS (mm/s)</div>
+          <div class="rms-grid">
+            <div class="rms-item x-axis">
+              <div class="rms-label">X 軸 (Axial)</div>
+              <div class="rms-val" id="valX">1.2</div>
+            </div>
+            <div class="rms-item y-axis">
+              <div class="rms-label">Y 軸 (Radial)</div>
+              <div class="rms-val" id="valY">3.1</div>
+            </div>
+            <div class="rms-item z-axis">
+              <div class="rms-label">Z 軸 (Tangential)</div>
+              <div class="rms-val" id="valZ">0.8</div>
+            </div>
+            <div class="rms-item total">
+              <div class="rms-label">合成向量 (Total)</div>
+              <div class="rms-val" id="valTotal">3.4</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Middle Section: 三軸 FFT 頻譜圖 -->
+      <div class="card">
+        <div class="fft-header">
+          <div>
+            <h3>三軸 FFT 頻譜分析 (Frequency Spectrum)</h3>
+            <span style="font-size: 0.85rem; color: var(--text-secondary)"
+              >檢視 0 ~ 200 Hz 能量分佈點</span
+            >
+          </div>
+          <div class="btn-group">
+            <button class="btn active" onclick="filterAxis('all', this)">
+              All 三軸疊加
+            </button>
+            <button class="btn" onclick="filterAxis(0, this)">X 軸</button>
+            <button class="btn" onclick="filterAxis(1, this)">Y 軸</button>
+            <button class="btn" onclick="filterAxis(2, this)">Z 軸</button>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="fftChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Bottom Section: 智慧診斷與建議 -->
+      <div class="card">
+        <div class="diagnosis-grid">
+          <div>
+            <div class="diag-title">
+              🔍 智慧根本原因診斷 (Root Cause Analysis)
+            </div>
+            <p id="diagText" style="line-height: 1.6; font-size: 0.95rem">
+              主要震動能量集中於
+              <strong style="color: var(--axis-y)">Y 軸 (徑向)</strong>，且在
+              <strong>60 Hz (2X 倍頻)</strong> 處檢測出顯著 Peak 能量。<p>研判為轉軸對中心不良 (Misalignment) 或底座螺絲放鬆。</p>
+            </p>
+          </div>
+          <div>
+            <div class="diag-title">💡 專家維護行動建議 (Action Items)</div>
+            <ul class="action-list" id="actionList">
+              <li>目前狀態為 Zone B，尚可繼續運轉，無即時危險。</li>
+              <li>建議排定於下次定期維修時，檢查 Y 軸向底座固定螺絲鎖緊度。</li>
+              <li>重新校正聯軸器（Coupling）對中心度。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. 引入 MQTT.js 函式庫 -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+    <!-- 2. 主邏輯指令碼 -->
+    <script>
+      // ISO 10816 標準門檻
+      const limits = { A: 1.4, B: 2.8, C: 4.5 };
+      let currentData = { x: 1.2, y: 3.1, z: 0.8 };
+
+      // 初始化前端 HiveMQ 雲端直連 (WebSocket 埠 8884)
+      const mqttClient = mqtt.connect('wss://a7e49771b2094445aff9bf69987ee553.s1.eu.hivemq.cloud:8884/mqtt', {
+          username: 'elise',
+          password: 'ee03101004'
+      });
+
+      mqttClient.on('connect', () => {
+          console.log("✅ 前端網頁已成功直接連線至 HiveMQ Cloud！");
+          mqttClient.subscribe('vibration/motor_control/status');
+      });
+
+      // 點擊按鈕直接透過 MQTT 發送指令給 C 程式，並啟動 15 秒防連點
+      async function triggerMotor(zone) {
+        console.log(`發送馬達指令: ${zone}`);
+        
+        // 直接發送 MQTT 訊息至 C 程式訂閱的 Topic
+        mqttClient.publish('vibration/motor_control/cmd', zone);
+
+        const buttons = document.querySelectorAll('.btn-zone');
+        buttons.forEach(btn => btn.disabled = true);
+        
+        let secondsLeft = 15;
+        const timerEl = document.getElementById('cooldownTimer');
+        timerEl.innerText = `⏳ 等待 ${secondsLeft}s`;
+        
+        const countdownInterval = setInterval(() => {
+          secondsLeft--;
+          if (secondsLeft > 0) {
+            timerEl.innerText = `⏳ 等待 ${secondsLeft}s`;
+          } else {
+            clearInterval(countdownInterval);
+            timerEl.innerText = "";
+            buttons.forEach(btn => btn.disabled = false);
+          }
+        }, 1000);
+      }
+
+      // 更新 ISO 狀態與畫面數值
+      function updateISOStatus() {
+        document.getElementById("valX").innerText = Number(currentData.x).toFixed(1);
+        document.getElementById("valY").innerText = Number(currentData.y).toFixed(1);
+        document.getElementById("valZ").innerText = Number(currentData.z).toFixed(1);
+
+        const total = Math.sqrt(
+          Math.pow(currentData.x, 2) +
+          Math.pow(currentData.y, 2) +
+          Math.pow(currentData.z, 2)
+        );
+        document.getElementById("valTotal").innerText = total.toFixed(1);
+
+        const maxVal = Math.max(currentData.x, currentData.y, currentData.z);
+        let maxAxisName = "X";
+        if (maxVal === currentData.y) maxAxisName = "Y";
+        if (maxVal === currentData.z) maxAxisName = "Z";
+
+        document.getElementById("max-vibration-axis").innerText = maxAxisName;
+        document.getElementById("max-vibration").innerText = maxVal.toFixed(1);
+
+        const badge = document.getElementById("statusBadge");
+        let zone = "", color = "", bgColor = "";
+
+        if (maxVal < limits.A) {
+          zone = "ZONE A (良好)";
+          color = "#ffffff";
+          bgColor = "var(--zone-a)";
+        } else if (maxVal < limits.B) {
+          zone = "ZONE B (滿意)";
+          color = "#ffffff";
+          bgColor = "var(--zone-b)";
+        } else if (maxVal < limits.C) {
+          zone = "ZONE C (警戒)";
+          color = "#000000";
+          bgColor = "var(--zone-c)";
+        } else {
+          zone = "ZONE D (危險)";
+          color = "#ffffff";
+          bgColor = "var(--zone-d)";
+        }
+
+        badge.innerText = zone;
+        badge.style.backgroundColor = bgColor;
+        badge.style.color = color;
+      }
+
+      // 初始化 Chart.js FFT 圖表
+      const ctx = document.getElementById("fftChart").getContext("2d");
+      const freqLabels = Array.from({ length: 40 }, (_, i) => i * 5);
+
+      let fftDataX = freqLabels.map((f) => (f === 30 ? 0.8 : Math.random() * 0.15));
+      let fftDataY = freqLabels.map((f) => (f === 60 ? 2.1 : f === 30 ? 0.6 : Math.random() * 0.2));
+      let fftDataZ = freqLabels.map((f) => Math.random() * 0.1);
+
+      const chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: freqLabels.map((f) => f + " Hz"),
+          datasets: [
+            {
+              label: "X 軸 (Axial)",
+              data: fftDataX,
+              borderColor: "#ef4444",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              borderWidth: 2,
+              tension: 0.2,
+            },
+            {
+              label: "Y 軸 (Radial)",
+              data: fftDataY,
+              borderColor: "#10b981",
+              backgroundColor: "rgba(16, 185, 129, 0.1)",
+              borderWidth: 2,
+              tension: 0.2,
+            },
+            {
+              label: "Z 軸 (Tangential)",
+              data: fftDataZ,
+              borderColor: "#3b82f6",
+              backgroundColor: "rgba(59, 130, 246, 0.1)",
+              borderWidth: 2,
+              tension: 0.2,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: { grid: { color: "#2a3447" }, ticks: { color: "#94a3b8" } },
+            y: { grid: { color: "#2a3447" }, ticks: { color: "#94a3b8" }, title: { display: true, text: "振幅 (g / mm/s)", color: "#94a3b8" } }
+          },
+          plugins: { legend: { labels: { color: "#e2e8f0" } } },
+        },
+      });
+
+      function filterAxis(axisIndex, btn) {
+        document.querySelectorAll(".btn-group .btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        chart.data.datasets.forEach((dataset, index) => {
+          if (axisIndex === "all") {
+            dataset.hidden = false;
+          } else {
+            dataset.hidden = index !== axisIndex;
+          }
+        });
+        chart.update();
+      }
+
+      // 接收感測器與診斷資料更新
+      function receiveApiData(payload) {
+        if (payload.rms) {
+          currentData = payload.rms;
+          updateISOStatus();
+        }
+        if (payload.fft) {
+          if (payload.fft.x && Array.isArray(payload.fft.x)) chart.data.datasets[0].data = payload.fft.x;
+          if (payload.fft.y && Array.isArray(payload.fft.y)) chart.data.datasets[1].data = payload.fft.y;
+          if (payload.fft.z && Array.isArray(payload.fft.z)) chart.data.datasets[2].data = payload.fft.z;
+          chart.update();
+        }
+        if (payload.diagnosis) {
+          if (payload.diagnosis.reason) document.getElementById("diagText").innerHTML = payload.diagnosis.reason;
+          if (payload.diagnosis.actions && Array.isArray(payload.diagnosis.actions)) {
+            document.getElementById("actionList").innerHTML = payload.diagnosis.actions.map(act => `<li>${act}</li>`).join("");
+          }
+        }
+      }
+
+      updateISOStatus();
+
+      // 每秒向後端 /api/values 輪詢感測器數值
+      setInterval(async () => {
+        try {
+          const response = await fetch('/api/values');
+          const data = await response.json();
+          receiveApiData(data);
+        } catch (err) {
+          console.error("無法取得即時資料:", err);
+        }
+      }, 1000);
+    </script>
+  </body>
+</html>
