@@ -1,1 +1,0 @@
-savedcmd_MPU6050_driver.ko := aarch64-linux-gnu-ld -r -EL  -maarch64elf -z noexecstack --no-warn-rwx-segments --build-id=sha1  -T /usr/src/linux-headers-6.18.34+rpt-rpi-2712/arch/arm64/module.lds -o MPU6050_driver.ko MPU6050_driver.o MPU6050_driver.mod.o .module-common.o

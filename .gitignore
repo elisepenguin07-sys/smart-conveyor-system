@@ -1,12 +1,17 @@
-# Node modules & dependencies
+# Node modules
 node_modules/
 package-lock.json
 
-# IDE and system files
+# IDE / System
 .vscode/
 .DS_Store
 
-# Build / compilation outputs
-PICOW/build/
+# Linux Kernel Driver build artifacts (把這些全部擋掉)
 *.o
 *.ko
+*.mod
+*.mod.c
+*.order
+*.symvers
+.*.cmd
+.tmp_versions/
