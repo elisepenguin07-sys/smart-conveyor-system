@@ -18,13 +18,13 @@ struct i2c_client  *etx_i2c_client  = NULL;
 
 static char message[256] = {0};
 
-// 宣告 Callback 函數
+
 static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 
-// 綁定檔案操作 (File Operations)
+
 static struct file_operations fops = {
     .open = dev_open,
     .read = dev_read,
@@ -38,31 +38,26 @@ struct mpu6050_data {
     short accel_z;
 };
 
-/*
-** 當 I2C 核心成功將 Device 與 Driver 匹配時，會自動觸發 probe 函式！
-*/
+
 static int etx_mpu_probe(struct i2c_client *client)
 {
     pr_info("PICO Driver Probed successfully!\n");
     return 0;
 }
 
-/*
-** 當驅動被卸載或裝置被移除時觸發
-*/
 static void etx_mpu_remove(struct i2c_client *client)
 {   
     pr_info("PICO Driver Removed!\n");
 }
 
-// 1. 定義 Device ID Table
+// 定義 Device ID Table
 static const struct i2c_device_id mpu_id_table[] = {
     { SLAVE_DEVICE_NAME, 0 },
     { }
 };
 MODULE_DEVICE_TABLE(i2c, mpu_id_table);
 
-// 2. 定義 i2c_driver 結構
+// 定義 i2c_driver 結構
 static struct i2c_driver etx_mpu_driver = {
     .driver = {
         .name   = SLAVE_DEVICE_NAME,
@@ -130,9 +125,8 @@ static int __init i2c_init(void) {
     // 釋放 adapter 引用
     i2c_put_adapter(etx_i2c_adapter);
 
-    // 7. 【最關鍵一步！】向 Linux I2C 子系統註冊你的 i2c_driver
-    // 這一行執行下去，Kernel 就會拿 etx_mpu_driver 去跟剛剛建好的 etx_i2c_client 比對，
-    // 比對成功就會立刻觸發上面的 etx_mpu_probe()！
+    // 7. 向 Linux I2C 子系統註冊 i2c_driver
+
     i2c_add_driver(&etx_mpu_driver);
 
     return 0;
@@ -140,7 +134,7 @@ static int __init i2c_init(void) {
 
 // 驅動卸載
 static void __exit i2c_exit(void) {
-    // 1. 先從 I2C 子系統刪除 Driver
+    // 1. 從 I2C 子系統刪除 Driver
     i2c_del_driver(&etx_mpu_driver);
 
     // 2. 註銷 I2C Client 裝置
@@ -157,13 +151,11 @@ static void __exit i2c_exit(void) {
     printk(KERN_INFO "I2CDriver: Goodbye from the Kernel!\n");
 }
 
-// Open 實現
 static int dev_open(struct inode *inodep, struct file *filep) {
     printk(KERN_INFO "I2CDriver: Device has been opened\n");
     return 0;
 }
 
-// Read 實現
 static ssize_t dev_read(struct file *filep, char __user *buffer, size_t len, loff_t *offset) {
     struct mpu6050_data mpu_data;
     u8 raw_data[6];
@@ -171,20 +163,18 @@ static ssize_t dev_read(struct file *filep, char __user *buffer, size_t len, lof
     if (len < sizeof(mpu_data)) {
         return -EINVAL;
     }
-
-    // 1. 讀取 Pico (0x42)
+    
+    // 讀取 Pico (0x42)
     int ret = i2c_master_recv(etx_i2c_client, raw_data, 6);
     if (ret < 0) {
         pr_err("I2CDriver: Failed to read data from PICO! (ret = %d)\n", ret);
         return -EIO;
     }
 
-    // 2. 組成數據
     mpu_data.accel_x = (short)((raw_data[0] << 8) | raw_data[1]);
     mpu_data.accel_y = (short)((raw_data[2] << 8) | raw_data[3]);
     mpu_data.accel_z = (short)((raw_data[4] << 8) | raw_data[5]);
 
-    // 3. 複製到 User Space
     if (copy_to_user(buffer, &mpu_data, sizeof(mpu_data))) {
         return -EFAULT;
     }
@@ -192,7 +182,6 @@ static ssize_t dev_read(struct file *filep, char __user *buffer, size_t len, lof
     return sizeof(mpu_data); 
 }
 
-// Write 實現
 static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset) {
     if (copy_from_user(message, buffer, len)) {
         return -EFAULT;
@@ -200,7 +189,6 @@ static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, lof
     return len;
 }
 
-// Release 實現
 static int dev_release(struct inode *inodep, struct file *filep) {
     printk(KERN_INFO "I2CDriver: Device successfully closed\n");
     return 0;
